@@ -265,20 +265,20 @@ static void poly_fill(GContext *ctx, GPoint *pts, int n, int32_t cx,
       int32_t lo = xs[e] < cx - dx ? cx - dx : xs[e];
       int32_t hi = xs[e + 1] > cx + dx ? cx + dx : xs[e + 1];
       int32_t run_start = -1;
-      GColor run_col = GColorBlack;
+      bool run_dark = false;
       for (int32_t x = lo; x <= hi + 1; x++) {
         bool on = x <= hi && stipple_on(x, y, density);
-        GColor col = GColorArmyGreen;
-        if (core && on && !((x & 1) || (y & 1))) col = GColorBlack;
+        bool dark = core && on && !((x & 1) || (y & 1));
         if (on && run_start < 0) {
           run_start = x;
-          run_col = col;
-        } else if (run_start >= 0 && (!on || col != run_col)) {
-          graphics_context_set_fill_color(ctx, run_col);
+          run_dark = dark;
+        } else if (run_start >= 0 && (!on || dark != run_dark)) {
+          graphics_context_set_fill_color(ctx, run_dark ? GColorBlack
+                                                        : GColorArmyGreen);
           graphics_fill_rect(ctx, GRect(run_start, y, x - run_start, 1), 0,
                              GCornerNone);
           run_start = on ? x : -1;
-          run_col = col;
+          run_dark = dark;
         }
       }
     }
@@ -327,9 +327,9 @@ static void draw_shadow(GContext *ctx, const Dial *d, int32_t cx, int32_t cy,
   }
 
   /* crisp reading edge from centre to the style tip, clamped inside 0.97R */
-  PointQ10 tip = dial_style_tip(d, sun);
-  int64_t tpx = (int64_t)tip.x * R / 1024;
-  int64_t tpy = (int64_t)tip.y * R / 1024;
+  PointQ10 tip_s = dial_to_screen(d, dial_style_tip(d, sun));
+  int64_t tpx = (int64_t)tip_s.x * R / 1024;
+  int64_t tpy = (int64_t)tip_s.y * R / 1024;
   int64_t tlen2 = tpx * tpx + tpy * tpy;
   int64_t lim = (int64_t)R * 997 / 1024;
   if (tlen2 > lim * lim) {
