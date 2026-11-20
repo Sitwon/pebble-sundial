@@ -57,6 +57,63 @@ static void annulus_stipple(GContext *ctx, int32_t cx, int32_t cy, int32_t r_in,
 #define NUM_H   PBL_PLATFORM_SWITCH(PBL_PLATFORM_TYPE_CURRENT, 0, 0, 0, 0, 12, 0, 16)
 #define STROKE  PBL_PLATFORM_SWITCH(PBL_PLATFORM_TYPE_CURRENT, 0, 0, 0, 0, 1, 0, 2)
 
+/* ---- scene palettes (step 5.5, SPEC 4.1) ---- */
+
+typedef struct {
+  GColor base, base_stipple;   /* dial base + inner brightness stipple */
+  GColor band;                 /* concentric darkening stipple */
+  GColor edge, edge_stipple;   /* rim band */
+  GColor patina;
+  GColor eng_core, eng_light;  /* engraved lines, numerals, hub */
+  GColor motto;
+  GColor blade_lit, blade_shade, blade_rim;
+  GColor sh_pen;               /* penumbra / band color */
+  GColor sh_core_dark;         /* umbra dark component */
+  bool no_umbra;               /* golden: lighter shadow, no black core */
+} Palette;
+
+static Palette palette_for(Scene sc, bool calibrated) {
+  Palette p;
+  if (sc.theme == THEME_NIGHT) {
+    p.base = GColorDarkGray;         p.base_stipple = GColorCadetBlue;
+    p.band = GColorOxfordBlue;       p.edge = GColorOxfordBlue;
+    p.edge_stipple = GColorDarkGray; p.patina = GColorOxfordBlue;
+    p.eng_core = GColorBlack;        p.eng_light = GColorLightGray;
+    p.motto = GColorLightGray;
+    p.blade_lit = GColorDarkGray;    p.blade_shade = GColorBlack;
+    p.blade_rim = GColorLightGray;
+    p.sh_pen = GColorArmyGreen;      p.sh_core_dark = GColorBlack;
+    p.no_umbra = false;
+  } else if (sc.theme == THEME_GOLDEN) {
+    p.base = GColorBrass;            p.base_stipple = GColorRajah;
+    p.band = GColorWindsorTan;       p.edge = GColorWindsorTan;
+    p.edge_stipple = GColorArmyGreen; p.patina = GColorWindsorTan;
+    p.eng_core = GColorWindsorTan;   p.eng_light = GColorRajah;
+    p.motto = GColorRajah;
+    p.blade_lit = GColorChromeYellow; p.blade_shade = GColorRajah;
+    p.blade_rim = GColorChromeYellow;
+    p.sh_pen = GColorArmyGreen;      p.sh_core_dark = GColorArmyGreen;
+    p.no_umbra = true;
+  } else {  /* day */
+    p.base = GColorBrass;            p.base_stipple = GColorChromeYellow;
+    p.band = GColorArmyGreen;        p.edge = GColorArmyGreen;
+    p.edge_stipple = GColorDarkGray; p.patina = GColorArmyGreen;
+    p.eng_core = GColorArmyGreen;    p.eng_light = GColorChromeYellow;
+    p.motto = GColorArmyGreen;
+    p.blade_lit = GColorRajah;       p.blade_shade = GColorWindsorTan;
+    p.blade_rim = GColorChromeYellow;
+    p.sh_pen = GColorArmyGreen;      p.sh_core_dark = GColorBlack;
+    p.no_umbra = false;
+  }
+  /* uncalibrated / provisional: dim engraving, hollow index */
+  if (!calibrated) {
+    p.eng_core = GColorDarkGray;
+    p.eng_light = GColorLightGray;
+    p.motto = GColorDarkGray;
+  }
+  return p;
+}
+
 static void stroke_line(GContext *ctx, GPoint a, GPoint b, GColor color,
                         int width) {
   graphics_context_set_stroke_color(ctx, color);
@@ -110,8 +167,7 @@ static void draw_glyph(GContext *ctx, char c, int x, int y, int h, int stroke,
 static void draw_label(GContext *ctx, const char *label, int cx, int cy,
                        GColor core, GColor light) {
   int h = NUM_H, w = 0;
-  for (const char *p = label; *p; p++) w += glyph_width(*p, h) + 1;
-  w -= 1;
+  for (const char *p = label; *p; p++) w += glyph_width(*p, h);
   int x = cx - w / 2;
   for (const char *p = label; *p; p++) {
     draw_glyph(ctx, *p, x + glyph_width(*p, h) / 2, cy, h, STROKE, core, light);
@@ -120,14 +176,15 @@ static void draw_label(GContext *ctx, const char *label, int cx, int cy,
 }
 
 static void draw_engraving(GContext *ctx, const Dial *dial, int32_t cx,
-                           int32_t cy, int32_t R, bool calibrated) {
+                           int32_t cy, int32_t R, const Palette *p,
+                           bool calibrated) {
   static const char *k_labels[13] = {
     "VI", "VII", "VIII", "IX", "X", "XI", "XII", "I", "II", "III", "IV", "V",
     "VI"
   };
 
-  GColor core = calibrated ? GColorArmyGreen : GColorDarkGray;
-  GColor light = calibrated ? GColorChromeYellow : GColorLightGray;
+  GColor core = p->eng_core;
+  GColor light = p->eng_light;
 
   /* hour lines 0.14R..0.70R; XII is the 2 px substyle */
   for (int i = 0; i < 13; i++) {
@@ -154,7 +211,7 @@ static void draw_engraving(GContext *ctx, const Dial *dial, int32_t cx,
   graphics_context_set_fill_color(ctx, core);
   graphics_fill_circle(ctx, GPoint(cx, cy), hr);
 
-  /* pole index: 3/4 px dot at 0.97R above centre */
+  /* pole index: 3/4 px dot at 0.97R above centre; filled only when calibrated */
   int r_dot = STROKE + 2;
   if (calibrated) {
     graphics_context_set_fill_color(ctx, GColorBlack);
@@ -167,7 +224,7 @@ static void draw_engraving(GContext *ctx, const Dial *dial, int32_t cx,
 }
 
 static void draw_motto(GContext *ctx, int32_t cx, int32_t cy, int32_t R,
-                       bool calibrated) {
+                       const Palette *p) {
   const char *motto = "HORAS NON NUMERO NISI SERENAS";
   GFont font = PBL_PLATFORM_SWITCH(PBL_PLATFORM_TYPE_CURRENT, 0, 0, 0, 0,
       fonts_get_system_font(FONT_KEY_GOTHIC_09),
@@ -181,8 +238,7 @@ static void draw_motto(GContext *ctx, int32_t cx, int32_t cy, int32_t R,
   int64_t half_chord = (int64_t)R * 777 / 1024;
   if ((int32_t)size.w > 2 * half_chord) motto = "TEMPUS FUGIT";
 
-  graphics_context_set_text_color(
-      ctx, calibrated ? GColorArmyGreen : GColorDarkGray);
+  graphics_context_set_text_color(ctx, p->motto);
   graphics_draw_text(ctx, motto, font,
                      ((GRect){{cx - R, my - size.h / 2}, {2 * R, size.h + 2}}),
                      GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);}
@@ -193,30 +249,32 @@ static void draw_case(GContext *ctx, GRect bounds) {
 }
 
 static void draw_dial(GContext *ctx, int32_t cx, int32_t cy, int32_t R,
-                      bool calibrated) {
-  (void)calibrated;
+                      const Palette *p) {
+  /* rim band */
+  annulus_stipple(ctx, cx, cy, R - RIM_W, R, p->edge, 8);
+  circle_stipple(ctx, cx, cy, R - RIM_W, p->edge_stipple, 16);
 
-  /* rim band: ArmyGreen / DarkGray dither */
-  annulus_stipple(ctx, cx, cy, R - RIM_W, R, GColorArmyGreen, 8);
-  circle_stipple(ctx, cx, cy, R - RIM_W, GColorDarkGray, 16);
-
-  /* brass base */
-  graphics_context_set_fill_color(ctx, GColorBrass);
+  /* dial base */
+  graphics_context_set_fill_color(ctx, p->base);
   graphics_fill_circle(ctx, GPoint(cx, cy), R - RIM_W);
 
+  /* inner brightness stipple (ChromeYellow by day, warmer/dimmer at other
+     scenes) fading out by 0.45R */
+  annulus_stipple(ctx, cx, cy, 0, R * 449 / 1024, p->base_stipple, 4);
+
   /* 4 concentric bands, slightly darker toward the rim:
-     ArmyGreen stipple density rises outward across dithered boundaries */
+     stipple density rises outward across dithered boundaries */
   static const uint8_t k_band_dens[4] = {1, 3, 6, 9};
   static const uint16_t k_bounds_q10[5] = {0, 449, 619, 800, 940};
   for (int b = 0; b < 4; b++) {
     annulus_stipple(ctx, cx, cy,
                     R * k_bounds_q10[b] / 1024, R * k_bounds_q10[b + 1] / 1024,
-                    GColorArmyGreen, k_band_dens[b]);
+                    p->band, k_band_dens[b]);
   }
   /* dithered transitions at each boundary */
   for (int b = 1; b < 4; b++) {
     int32_t rb = R * k_bounds_q10[b] / 1024;
-    annulus_stipple(ctx, cx, cy, rb - 1, rb + 1, GColorArmyGreen, 8);
+    annulus_stipple(ctx, cx, cy, rb - 1, rb + 1, p->band, 8);
   }
 
   /* 3 fixed patina stipples near the rim */
@@ -225,7 +283,7 @@ static void draw_dial(GContext *ctx, int32_t cx, int32_t cy, int32_t R,
     int32_t a = k_patina_deg[i] * 65536 / 360;
     int32_t px = cx + (int32_t)((int64_t)tri_sin(a) * R / 65536 * 93 / 100);
     int32_t py = cy - (int32_t)((int64_t)tri_cos(a) * R / 65536 * 93 / 100);
-    circle_stipple(ctx, px, py, 8, GColorArmyGreen, 5);
+    circle_stipple(ctx, px, py, 8, p->patina, 5);
   }
 }
 
@@ -233,7 +291,8 @@ static void draw_dial(GContext *ctx, int32_t cx, int32_t cy, int32_t R,
 
 /* stipple-filled scanline polygon, rows clipped to the dial circle */
 static void poly_fill(GContext *ctx, GPoint *pts, int n, int32_t cx,
-                      int32_t cy, int32_t R, uint8_t density, bool core) {
+                      int32_t cy, int32_t R, uint8_t density, bool core,
+                      GColor pen, GColor core_dark) {
   int32_t ymin = pts[0].y, ymax = pts[0].y;
   for (int i = 1; i < n; i++) {
     if (pts[i].y < ymin) ymin = pts[i].y;
@@ -273,8 +332,7 @@ static void poly_fill(GContext *ctx, GPoint *pts, int n, int32_t cx,
           run_start = x;
           run_dark = dark;
         } else if (run_start >= 0 && (!on || dark != run_dark)) {
-          graphics_context_set_fill_color(ctx, run_dark ? GColorBlack
-                                                        : GColorArmyGreen);
+          graphics_context_set_fill_color(ctx, run_dark ? core_dark : pen);
           graphics_fill_rect(ctx, GRect(run_start, y, x - run_start, 1), 0,
                              GCornerNone);
           run_start = on ? x : -1;
@@ -286,7 +344,7 @@ static void poly_fill(GContext *ctx, GPoint *pts, int n, int32_t cx,
 }
 
 static void draw_shadow(GContext *ctx, const Dial *d, int32_t cx, int32_t cy,
-                        int32_t R, Vec3q16 sun) {
+                        int32_t R, Vec3q16 sun, const Palette *p) {
   Scene sc = scene_for_sun(sun.z);
   if (sc.shadow == 0) return;
 
@@ -312,18 +370,25 @@ static void draw_shadow(GContext *ctx, const Dial *d, int32_t cx, int32_t cy,
   int32_t cap = PBL_PLATFORM_SWITCH(PBL_PLATFORM_TYPE_CURRENT, 0, 0, 0, 0, 6, 0, 8);
   if (band_px > cap) band_px = cap;
 
-  /* three nested fills scaled about the style foot, outside in */
   int32_t scales[3] = {65536,
                        band_scale_q16(max_q10, band_px / 2),
                        band_scale_q16(max_q10, band_px)};
-  uint8_t dens[3] = {12, 8, 4};
-  for (int b = 2; b >= 0; b--) {
+
+  /* nested fills scaled about the style foot, outside in; golden skips
+     the black umbra and uses lighter densities */
+  uint8_t dens[3];
+  dens[0] = p->no_umbra ? 6 : 12;
+  dens[1] = p->no_umbra ? 4 : 8;
+  dens[2] = p->no_umbra ? 2 : 4;
+  int bands = p->no_umbra ? 2 : 3;   /* core, mid, outer */
+  for (int b = bands - 1; b >= 0; b--) {
     GPoint poly[6];
     for (int i = 0; i < n; i++) {
       poly[i].x = (int16_t)(cx + ((int32_t)(base[i].x - cx) * scales[b]) / 65536);
       poly[i].y = (int16_t)(cy + ((int32_t)(base[i].y - cy) * scales[b]) / 65536);
     }
-    poly_fill(ctx, poly, n, cx, cy, R, dens[b], b == 0);
+    poly_fill(ctx, poly, n, cx, cy, R, dens[b], b == 0 && !p->no_umbra,
+              p->sh_pen, p->sh_core_dark);
   }
 
   /* crisp reading edge from centre to the style tip, clamped inside 0.97R */
@@ -338,34 +403,35 @@ static void draw_shadow(GContext *ctx, const Dial *d, int32_t cx, int32_t cy,
     tpy = tpy * f / 65536;
   }
   graphics_context_set_antialiased(ctx, false);
-  stroke_line(ctx, GPoint(cx, cy), GPoint(cx + tpx, cy + tpy), GColorBlack, 1);
+  stroke_line(ctx, GPoint(cx, cy), GPoint(cx + tpx, cy + tpy),
+              p->no_umbra ? p->sh_core_dark : GColorBlack, 1);
   graphics_context_set_antialiased(ctx, true);
 }
 
 
 
 static void draw_blade(GContext *ctx, const Dial *d, int32_t cx, int32_t cy,
-                       int32_t R, Vec3q16 sun) {
+                       int32_t R, Vec3q16 sun, const Palette *p) {
   int32_t Lpx = (int32_t)((int64_t)d->L_q10 * R / 1024);
   int32_t wpx = (int32_t)((int64_t)d->w_q10 * R / 1024);
   if (wpx < 2) wpx = 2;
   int32_t half = wpx / 2;
 
   /* blade always points up toward the visible pole */
-  graphics_context_set_fill_color(ctx, GColorWindsorTan);
+  graphics_context_set_fill_color(ctx, p->blade_shade);
   graphics_fill_rect(ctx, ((GRect){{cx - half, cy - Lpx}, {wpx, Lpx}}), 0,
                      GCornerNone);
   int32_t sunx = sun.x * d->pole;   /* sun's screen-x sign */
-  graphics_context_set_fill_color(ctx, GColorRajah);   /* sunward half lit */
+  graphics_context_set_fill_color(ctx, p->blade_lit);   /* sunward half lit */
   graphics_fill_rect(ctx,
       ((GRect){{sunx > 0 ? cx : cx - half, cy - Lpx}, {half, Lpx}}), 0, GCornerNone);
 
   /* ridge line, sunward bevel, far-edge rim light */
-  graphics_context_set_stroke_color(ctx, GColorChromeYellow);
+  graphics_context_set_stroke_color(ctx, p->blade_rim);
   graphics_context_set_stroke_width(ctx, 1);
   graphics_draw_line(ctx, GPoint(cx, cy - 1), GPoint(cx, cy - Lpx + 1));
   stroke_line(ctx, GPoint(cx + (sunx > 0 ? half : -half), cy - Lpx),
-                   GPoint(cx + (sunx > 0 ? half : -half), cy), GColorChromeYellow, 1);
+                   GPoint(cx + (sunx > 0 ? half : -half), cy), p->blade_rim, 1);
   graphics_draw_line(ctx, GPoint(cx - half, cy - Lpx),
                           GPoint(cx + half, cy - Lpx));
 
@@ -379,10 +445,11 @@ void render_draw(GContext *ctx, GRect bounds, const Dial *dial,
   (void)solar;
   int32_t cx = DIAL_CX, cy = DIAL_CY, R = DIAL_R;
 
+  Palette p = palette_for(scene_for_sun(sun.z), calibrated);
   draw_case(ctx, bounds);
-  draw_dial(ctx, cx, cy, R, calibrated);
-  draw_engraving(ctx, dial, cx, cy, R, calibrated);
-  draw_motto(ctx, cx, cy, R, calibrated);
-  draw_shadow(ctx, dial, cx, cy, R, sun);
-  draw_blade(ctx, dial, cx, cy, R, sun);
+  draw_dial(ctx, cx, cy, R, &p);
+  draw_engraving(ctx, dial, cx, cy, R, &p, calibrated);
+  draw_motto(ctx, cx, cy, R, &p);
+  draw_shadow(ctx, dial, cx, cy, R, sun, &p);
+  draw_blade(ctx, dial, cx, cy, R, sun, &p);
 }
