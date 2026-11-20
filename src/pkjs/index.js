@@ -1,6 +1,8 @@
-/* sundial/pkjs/index.js — GPS + manual location intake (step 6.3) */
+/* sundial/pkjs/index.js — GPS + manual location intake, Clay settings (steps 6.3/6.4) */
 
 var settings = require('./settings.js');
+var Clay = require('@rebble/clay');
+var clay = new Clay(require('./config.js'), null, { autoHandleEvents: false });
 
 /* Message keys, in package.json messageKeys order (keys start at 10000). */
 var KEY = {
@@ -58,4 +60,20 @@ Pebble.addEventListener('ready', updateLocation);
 Pebble.addEventListener('appmessage', function (e) {
   if (e.payload && e.payload['10000'] !== undefined) updateLocation();
 });
+
+/* Clay settings page. */
+Pebble.addEventListener('showConfiguration', function () {
+  Pebble.openURL(clay.generateUrl());
+});
+
+Pebble.addEventListener('webviewclosed', function (e) {
+  if (!e || !e.response) return;
+  var cfg = clay.getSettings(e.response, false);
+  var loc = settings.parseLocation(String(cfg.lat), String(cfg.lon));
+  /* invalid coordinates: keep the previous values, don't resend */
+  if (!loc) return;
+  settings.saveSettings({ useGps: !!cfg.useGps, lat: String(cfg.lat), lon: String(cfg.lon) });
+  updateLocation();
+});
+
 

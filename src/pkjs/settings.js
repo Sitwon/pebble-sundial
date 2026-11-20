@@ -20,7 +20,7 @@ function parseLocation(latStr, lonStr) {
 
 /* Default location: Greenwich. */
 var DEFAULT_LAT = 51.4779;
-var DEFAULT_LON = -0.0025;
+var DEFAULT_LON = -0.0015;
 
 /* Load stored settings from localStorage; fall back to defaults. */
 function loadSettings() {
