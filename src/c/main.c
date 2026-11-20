@@ -1,27 +1,40 @@
 #include <pebble.h>
+#include "dial.h"
+#include "render.h"
+#include "solar.h"
+#include "sundial.h"
 
 static Window *s_window;
 static Layer *s_layer;
 
+static Dial s_dial;
+static SolarState s_solar;
+static Location s_loc = {514779, -15, 0, false};  /* Greenwich until phase 6 */
+
+static void redraw(void) {
+  solar_state(time(NULL), s_loc.lon_e4, &s_solar);
+  dial_init(&s_dial, s_loc.lat_e4);
+  layer_mark_dirty(s_layer);
+}
+
+static void tick_handler(struct tm *tick_time, TimeUnits units) {
+  (void)tick_time;
+  (void)units;
+  redraw();
+}
+
 static void draw(Layer *layer, GContext *ctx) {
   GRect bounds = layer_get_bounds(layer);
-  GPoint center = grect_center_point(&bounds);
-  int16_t r = (bounds.size.w < bounds.size.h ? bounds.size.w : bounds.size.h) / 2 - 6;
-
-  graphics_context_set_fill_color(ctx, GColorBlack);
-  graphics_fill_rect(ctx, bounds, 0, GCornerNone);
-
-  graphics_context_set_antialiased(ctx, true);
-  graphics_context_set_fill_color(ctx, GColorBrass);
-  graphics_fill_circle(ctx, center, r);
+  Vec3q16 sun = {0, 0, 0};
+  render_draw(ctx, bounds, &s_dial, &s_solar, sun, s_loc.valid);
 }
 
 static void window_load(Window *window) {
   Layer *root = window_get_root_layer(window);
-  GRect bounds = layer_get_bounds(root);
-  s_layer = layer_create(bounds);
+  s_layer = layer_create(layer_get_bounds(root));
   layer_set_update_proc(s_layer, draw);
   layer_add_child(root, s_layer);
+  redraw();
 }
 
 static void window_unload(Window *window) {
@@ -36,9 +49,11 @@ static void init(void) {
     .unload = window_unload,
   });
   window_stack_push(s_window, true);
+  tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
 }
 
 static void deinit(void) {
+  tick_timer_service_unsubscribe();
   window_destroy(s_window);
 }
 

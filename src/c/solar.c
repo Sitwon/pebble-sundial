@@ -1,4 +1,3 @@
-#include <time.h>
 #include "solar.h"
 #include "fixmath.h"
 #include "trig.h"
@@ -14,13 +13,29 @@ static int32_t interp(int32_t a, int32_t b, int32_t frac_q16) {
   return a + (int32_t)(((int64_t)(b - a) * frac_q16) / 65536);
 }
 
+/* no SDK time dependency: break the UTC epoch down with the civil-date
+ * algorithm (equivalent to gmtime, TZ-independent by construction) */
+static void utc_broken(int64_t utc, int *idx, int32_t *sod) {
+  int32_t days = (int32_t)(utc / 86400);
+  *sod = (int32_t)(utc % 86400);
+
+  int32_t z = days + 719468;
+  int32_t era = (z >= 0 ? z : z - 146096) / 146097;
+  int32_t doe = z - era * 146097;
+  int32_t yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+  int32_t doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+  int32_t mp = (5 * doy + 2) / 153;
+  int32_t d = doy - (153 * mp + 2) / 5 + 1;
+  int32_t m = mp + (mp < 10 ? 3 : -9);
+
+  *idx = k_month_start_leap[m - 1] + d - 1;
+}
+
 void solar_state(time_t utc, int32_t lon_e4, SolarState *out) {
-  struct tm *tm_utc = gmtime(&utc);
-
-  int idx = k_month_start_leap[tm_utc->tm_mon] + tm_utc->tm_mday - 1;
+  int idx;
+  int32_t sod;
+  utc_broken((int64_t)utc, &idx, &sod);
   int next = (idx + 1) % SOLAR_TABLE_DAYS;
-
-  int32_t sod = tm_utc->tm_hour * 3600 + tm_utc->tm_min * 60 + tm_utc->tm_sec;
   int32_t frac_q16 = (int32_t)(((int64_t)sod << 16) / 86400);
 
   out->decl_cdeg = (int16_t)interp(k_decl_cdeg[idx], k_decl_cdeg[next], frac_q16);
