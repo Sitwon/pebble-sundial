@@ -3,19 +3,19 @@ module.exports = [
   {
     'type': 'toggle',
     'label': 'Use phone GPS for location',
-    'key': 'useGps',
+    'messageKey': 'useGps',
     'defaultValue': false
   },
   {
     'type': 'input',
     'label': 'Latitude (-90..90)',
-    'key': 'lat',
+    'messageKey': 'lat',
     'defaultValue': '51.4779'
   },
   {
     'type': 'input',
     'label': 'Longitude (-180..180)',
-    'key': 'lon',
+    'messageKey': 'lon',
     'defaultValue': '-0.0015'
   },
   {

@@ -68,7 +68,10 @@ Pebble.addEventListener('showConfiguration', function () {
 
 Pebble.addEventListener('webviewclosed', function (e) {
   if (!e || !e.response) return;
-  var cfg = clay.getSettings(e.response, false);
+  /* getSettings(…, false) returns the raw {value:…} wrapper and stores the
+   * flattened copy in clay-settings; read that */
+  clay.getSettings(e.response, false);
+  var cfg = JSON.parse(localStorage.getItem('clay-settings') || '{}');
   var loc = settings.parseLocation(String(cfg.lat), String(cfg.lon));
   /* invalid coordinates: keep the previous values, don't resend */
   if (!loc) return;
