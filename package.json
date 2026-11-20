@@ -22,7 +22,8 @@
       "watchface": true
     },
     "capabilities": [
-      "location"
+      "location",
+      "configurable"
     ],
     "messageKeys": [
       "REQUEST_LOCATION",
