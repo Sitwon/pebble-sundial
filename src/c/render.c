@@ -229,14 +229,46 @@ static void draw_dial(GContext *ctx, int32_t cx, int32_t cy, int32_t R,
   }
 }
 
+/* ---- gnomon blade (step 5.3) ---- */
+
+static void draw_blade(GContext *ctx, const Dial *d, int32_t cx, int32_t cy,
+                       int32_t R, Vec3q16 sun) {
+  int32_t Lpx = (int32_t)((int64_t)d->L_q10 * R / 1024);
+  int32_t wpx = (int32_t)((int64_t)d->w_q10 * R / 1024);
+  if (wpx < 2) wpx = 2;
+  int32_t half = wpx / 2;
+
+  /* blade always points up toward the visible pole */
+  graphics_context_set_fill_color(ctx, GColorWindsorTan);
+  graphics_fill_rect(ctx, GRect(cx - half, cy - Lpx, wpx, Lpx), 0,
+                     GCornerNone);
+  int32_t sunx = sun.x * d->pole;   /* sun's screen-x sign */
+  graphics_context_set_fill_color(ctx, GColorRajah);   /* sunward half lit */
+  graphics_fill_rect(ctx,
+      GRect(sunx > 0 ? cx : cx - half, cy - Lpx, half, Lpx), 0, GCornerNone);
+
+  /* ridge line, sunward bevel, far-edge rim light */
+  graphics_context_set_stroke_color(ctx, GColorChromeYellow);
+  graphics_context_set_stroke_width(ctx, 1);
+  graphics_draw_line(ctx, GPoint(cx, cy - 1), GPoint(cx, cy - Lpx + 1));
+  stroke_line(ctx, GPoint(cx + (sunx > 0 ? half : -half), cy - Lpx),
+                   GPoint(cx + (sunx > 0 ? half : -half), cy), GColorChromeYellow, 1);
+  graphics_draw_line(ctx, GPoint(cx - half, cy - Lpx),
+                          GPoint(cx + half, cy - Lpx));
+
+  /* 2 px contact shadow across the base */
+  graphics_context_set_fill_color(ctx, GColorBlack);
+  graphics_fill_rect(ctx, GRect(cx - half - 1, cy, wpx + 2, 2), 0, GCornerNone);
+}
+
 void render_draw(GContext *ctx, GRect bounds, const Dial *dial,
                  const SolarState *solar, Vec3q16 sun, bool calibrated) {
   (void)solar;
-  (void)sun;
   int32_t cx = DIAL_CX, cy = DIAL_CY, R = DIAL_R;
 
   draw_case(ctx, bounds);
   draw_dial(ctx, cx, cy, R, calibrated);
   draw_engraving(ctx, dial, cx, cy, R, calibrated);
   draw_motto(ctx, cx, cy, R, calibrated);
+  draw_blade(ctx, dial, cx, cy, R, sun);
 }

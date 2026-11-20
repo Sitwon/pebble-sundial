@@ -9,11 +9,13 @@ static Layer *s_layer;
 
 static Dial s_dial;
 static SolarState s_solar;
+static Vec3q16 s_sun;
 static Location s_loc = {514779, -15, 0, false};  /* Greenwich until phase 6 */
 
 static void redraw(void) {
   solar_state(time(NULL), s_loc.lon_e4, &s_solar);
   dial_init(&s_dial, s_loc.lat_e4);
+  s_sun = sun_vector(&s_solar, s_loc.lat_e4);
   layer_mark_dirty(s_layer);
 }
 
@@ -25,8 +27,7 @@ static void tick_handler(struct tm *tick_time, TimeUnits units) {
 
 static void draw(Layer *layer, GContext *ctx) {
   GRect bounds = layer_get_bounds(layer);
-  Vec3q16 sun = {0, 0, 0};
-  render_draw(ctx, bounds, &s_dial, &s_solar, sun, s_loc.valid);
+  render_draw(ctx, bounds, &s_dial, &s_solar, s_sun, s_loc.valid);
 }
 
 static void window_load(Window *window) {
