@@ -17,6 +17,8 @@ typedef struct {
 } Dial;
 
 void dial_init(Dial *d, int32_t lat_e4);
+/* true when |lat| is inside the accurate 15..75 deg band (before clamping) */
+bool dial_in_band(int32_t lat_e4);
 PointQ10 dial_to_screen(const Dial *d, PointQ10 local);
 bool dial_shadow_visible(Vec3q16 sun);
 void dial_shadow_points(const Dial *d, Vec3q16 sun, PointQ10 out[6]);

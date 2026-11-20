@@ -6,6 +6,12 @@
 #define H_MAX_Q10 532    /* 0.52R */
 #define W_Q10    61     /* 0.06R */
 
+/* accurate band: |lat| inside 15..75 deg, shared with the clamp in dial_init */
+bool dial_in_band(int32_t lat_e4) {
+  int32_t abs_lat = lat_e4 < 0 ? -lat_e4 : lat_e4;
+  return abs_lat >= 150000 && abs_lat <= 750000;
+}
+
 void dial_init(Dial *d, int32_t lat_e4) {
   d->pole = lat_e4 >= 0 ? 1 : -1;
   d->lat_abs_e4 = clamp_i32(lat_e4 < 0 ? -lat_e4 : lat_e4, 150000, 750000);

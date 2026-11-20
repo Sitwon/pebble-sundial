@@ -53,7 +53,8 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
 
 static void draw(Layer *layer, GContext *ctx) {
   GRect bounds = layer_get_bounds(layer);
-  render_draw(ctx, bounds, &s_dial, &s_solar, s_sun, s_loc.valid);
+  render_draw(ctx, bounds, &s_dial, &s_solar, s_sun,
+              s_loc.valid && dial_in_band(s_loc.lat_e4));
 }
 
 static void window_load(Window *window) {

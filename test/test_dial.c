@@ -232,5 +232,16 @@ int main(void) {
   /* extreme offset stays capped */
   CHECK(band_scale_q16(1, 100000) <= 131072);
 
+  /* accurate band: |lat| 15..75 deg, south uses the absolute value */
+  CHECK(dial_in_band(150000));
+  CHECK(dial_in_band(750000));
+  CHECK(dial_in_band(514779));
+  CHECK(dial_in_band(-338688));
+  CHECK(!dial_in_band(149999));
+  CHECK(!dial_in_band(750001));
+  CHECK(!dial_in_band(0));
+  CHECK(!dial_in_band(50000));
+  CHECK(!dial_in_band(850000));
+
   return test_summary("test_dial");
 }
