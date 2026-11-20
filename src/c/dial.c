@@ -48,3 +48,90 @@ PointQ10 dial_to_screen(const Dial *d, PointQ10 local) {
   }
   return p;
 }
+
+/* no cast shadow below sin 2 deg (matches theme's SIN2 threshold) */
+#define DIAL_MIN_UZ 2287
+
+bool dial_shadow_visible(Vec3q16 sun) {
+  return sun.z >= DIAL_MIN_UZ;
+}
+
+/* project dial-plane point p (Q10, z up) along the sun vector onto z = 0 */
+static PointQ10 project(Vec3q16 sun, int32_t x, int32_t y, int32_t z) {
+  PointQ10 p;
+  p.x = (int32_t)(x - (int64_t)z * sun.x / sun.z);
+  p.y = (int32_t)(y - (int64_t)z * sun.y / sun.z);
+  return p;
+}
+
+void dial_shadow_points(const Dial *d, Vec3q16 sun, PointQ10 out[6]) {
+  if (!dial_shadow_visible(sun)) {
+    for (int i = 0; i < 6; i++) {
+      out[i].x = 0;
+      out[i].y = 0;
+    }
+    return;
+  }
+  int32_t x2 = d->w_q10 / 2;
+  int32_t yend = d->pole * d->L_q10;
+  int i = 0;
+  for (int e = 0; e < 2; e++) {
+    int32_t x = e ? x2 : -x2;
+    out[i++] = project(sun, x, 0, 0);
+    out[i++] = project(sun, x, yend, 0);
+    out[i++] = project(sun, x, yend, d->h_q10);
+  }
+}
+
+PointQ10 dial_style_tip(const Dial *d, Vec3q16 sun) {
+  PointQ10 p = {0, 0};
+  if (!dial_shadow_visible(sun)) return p;
+  /* centre of the style's top edge; its shadow lies on the hour line */
+  return project(sun, 0, d->pole * d->L_q10, d->h_q10);
+}
+
+static int64_t cross2(PointQ10 o, PointQ10 a, PointQ10 b) {
+  return (int64_t)(a.x - o.x) * (b.y - o.y) - (int64_t)(a.y - o.y) * (b.x - o.x);
+}
+
+/* monotone chain hull, CCW, collinear points dropped */
+int convex_hull(PointQ10 in[6], PointQ10 out[6]) {
+  PointQ10 p[6];
+  int n = 6;
+  for (int i = 0; i < n; i++) p[i] = in[i];
+  for (int i = 1; i < n; i++) {          /* insertion sort by (x, y) */
+    PointQ10 v = p[i];
+    int j = i - 1;
+    while (j >= 0 && (p[j].x > v.x || (p[j].x == v.x && p[j].y > v.y))) {
+      p[j + 1] = p[j];
+      j--;
+    }
+    p[j + 1] = v;
+  }
+  n = 0;                                  /* drop duplicates */
+  for (int i = 0; i < 6; i++)
+    if (n == 0 || p[i].x != p[n - 1].x || p[i].y != p[n - 1].y)
+      p[n++] = p[i];
+  if (n == 1) {
+    out[0] = p[0];
+    return 1;
+  }
+  if (n == 2) {
+    out[0] = p[0];
+    out[1] = p[1];
+    return 2;
+  }
+  PointQ10 h[12];
+  int k = 0;
+  for (int i = 0; i < n; i++) {           /* lower hull */
+    while (k >= 2 && cross2(h[k - 2], h[k - 1], p[i]) <= 0) k--;
+    h[k++] = p[i];
+  }
+  for (int i = n - 2, t = k + 1; i >= 0; i--) {  /* upper hull */
+    while (k >= t && cross2(h[k - 2], h[k - 1], p[i]) <= 0) k--;
+    h[k++] = p[i];
+  }
+  k--;                                    /* last point == first */
+  for (int i = 0; i < k; i++) out[i] = h[i];
+  return k;
+}

@@ -18,5 +18,9 @@ typedef struct {
 
 void dial_init(Dial *d, int32_t lat_e4);
 PointQ10 dial_to_screen(const Dial *d, PointQ10 local);
+bool dial_shadow_visible(Vec3q16 sun);
+void dial_shadow_points(const Dial *d, Vec3q16 sun, PointQ10 out[6]);
+PointQ10 dial_style_tip(const Dial *d, Vec3q16 sun);
+int convex_hull(PointQ10 in[6], PointQ10 out[6]);
 
 #endif

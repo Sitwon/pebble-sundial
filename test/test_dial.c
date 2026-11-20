@@ -6,6 +6,12 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+static double screen_angle_of(PointQ10 s) {
+  double a = atan2(s.x, -s.y) * 180.0 / M_PI;
+  if (a < 0) a += 360.0;
+  return a;
+}
+
 static const struct { int32_t lat_e4, pole, lat_abs; } clamps[] = {
   {0, 1, 150000}, {100000, 1, 150000}, {150000, 1, 150000},
   {514779, 1, 514779}, {750000, 1, 750000}, {890000, 1, 750000},
@@ -118,6 +124,98 @@ int main(void) {
   CHECK(n.x == 17 && n.y == 23);
   PointQ10 sth = dial_to_screen(&dtmp_s, loc);
   CHECK(sth.x == -17 && sth.y == -23);
+
+  /* --- step 3.3: visibility, projection, hull, style tip --- */
+  Vec3q16 uz_edge = {0, 0, 2287};
+  CHECK(dial_shadow_visible(uz_edge));
+  Vec3q16 uz_below = {0, 0, 2286};
+  CHECK(!dial_shadow_visible(uz_below));
+  Vec3q16 uz_neg = {0, 0, -100};
+  CHECK(!dial_shadow_visible(uz_neg));
+
+  /* six projected points at a daytime sun are finite and hull-able */
+  dial_init(&d, 514779);
+  SolarState sn;
+  solar_state(1782043200, -15, &sn);
+  Vec3q16 uday = sun_vector(&sn, 514779);
+  PointQ10 pts[6], hull[6];
+  dial_shadow_points(&d, uday, pts);
+  for (int i = 0; i < 6; i++) {
+    CHECK(pts[i].x > -1000000 && pts[i].x < 1000000);
+    CHECK(pts[i].y > -1000000 && pts[i].y < 1000000);
+  }
+  int nh = convex_hull(pts, hull);
+  CHECK(nh >= 3 && nh <= 6);
+
+  /* hull: convex order, no duplicates, contains all inputs */
+  for (int i = 0; i < nh; i++) {
+    int j = (i + 1) % nh, k = (i + 2) % nh;
+    int64_t cross = (int64_t)(hull[j].x - hull[i].x) * (hull[k].y - hull[i].y)
+                  - (int64_t)(hull[j].y - hull[i].y) * (hull[k].x - hull[i].x);
+    CHECK(cross > 0);   /* strictly convex, CCW */
+  }
+  for (int i = 0; i < 6; i++) {
+    int inside = 1;
+    for (int j = 0; j < nh; j++) {
+      int k = (j + 1) % nh;
+      int64_t cross = (int64_t)(hull[k].x - hull[j].x) * (pts[i].y - hull[j].y)
+                    - (int64_t)(hull[k].y - hull[j].y) * (pts[i].x - hull[j].x);
+      if (cross < -1) inside = 0;
+    }
+    CHECK(inside);
+  }
+
+  /* night sun: outputs zeroed, still safe */
+  dial_shadow_points(&d, uz_neg, pts);
+  int all_zero = 1;
+  for (int i = 0; i < 6; i++)
+    if (pts[i].x != 0 || pts[i].y != 0) all_zero = 0;
+  CHECK(all_zero);
+
+  /* style tip at solar noon points up in both hemispheres */
+  SolarState noon = {2343, 0, 72000, 0};
+  Vec3q16 un = sun_vector(&noon, 514779);
+  PointQ10 tip = dial_style_tip(&d, un);
+  CHECK_NEAR(screen_angle_of(dial_to_screen(&d, tip)), 0.0, 0.2);
+
+  Dial dsyd;
+  dial_init(&dsyd, -338688);
+  Vec3q16 un_s = sun_vector(&noon, -338688);
+  tip = dial_style_tip(&dsyd, un_s);
+  CHECK_NEAR(screen_angle_of(dial_to_screen(&dsyd, tip)), 0.0, 0.2);
+
+  /* tip direction matches the hour_dir entry at 9am solar (H = -45 deg) */
+  SolarState am = {2343, 0, 54000, -8192};
+  Vec3q16 uam = sun_vector(&am, 514779);
+  tip = dial_style_tip(&d, uam);
+  PointQ10 hd = d.hour_dir[3];
+  double tl = sqrt((double)tip.x * tip.x + (double)tip.y * tip.y);
+  double hl = sqrt((double)hd.x * hd.x + (double)hd.y * hd.y);
+  double dot = ((double)tip.x * hd.x + (double)tip.y * hd.y) / (tl * hl);
+  CHECK(dot > 0.9995);
+
+  /* reading-edge distance: winter noon > summer noon > 0 */
+  SolarState wnoon = {-2343, 0, 72000, 0};
+  Vec3q16 uw = sun_vector(&wnoon, 514779);
+  PointQ10 tip_summer = dial_style_tip(&d, un);
+  PointQ10 tip_winter = dial_style_tip(&d, uw);
+  int64_t sum2 = (int64_t)tip_summer.x * tip_summer.x + (int64_t)tip_summer.y * tip_summer.y;
+  int64_t win2 = (int64_t)tip_winter.x * tip_winter.x + (int64_t)tip_winter.y * tip_winter.y;
+  CHECK(win2 > sum2 && sum2 > 0);
+
+  /* anchor screen angles */
+  SolarState syd;
+  solar_state(1782007200, 1512093, &syd);   /* Sydney 2026-06-21 02:00 */
+  Vec3q16 usyd = sun_vector(&syd, -338688);
+  tip = dial_style_tip(&dsyd, usyd);
+  CHECK_NEAR(screen_angle_of(dial_to_screen(&dsyd, tip)), 359.6, 0.3);
+
+  Vec3q16 uam_s = sun_vector(&am, -338688);
+  tip = dial_style_tip(&dsyd, uam_s);
+  CHECK_NEAR(screen_angle_of(dial_to_screen(&dsyd, tip)), 29.1, 0.5);
+
+  tip = dial_style_tip(&d, uam);
+  CHECK_NEAR(screen_angle_of(dial_to_screen(&d, tip)), 322.0, 0.5);
 
   return test_summary("test_dial");
 }
