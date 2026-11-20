@@ -26,8 +26,14 @@ void dial_init(Dial *d, int32_t lat_e4) {
   d->w_q10 = W_Q10;
 
   for (int i = 0; i < 13; i++) {
-    d->hour_dir[i].x = 0;
-    d->hour_dir[i].y = 0;
+    /* H = -90 + 15*i deg in TRIG units; tan(theta) = sin|phi| * tan H */
+    int32_t H = (int32_t)(((int64_t)i * 65536) / 24) - 16384;
+    int32_t x = q16_mul(d->sin_lat, tri_sin(H));
+    int32_t y = d->pole * tri_cos(H);
+    uint32_t len = isqrt_u64((uint64_t)((int64_t)x * x + (int64_t)y * y));
+    if (len == 0) len = 1;
+    d->hour_dir[i].x = (int32_t)(((int64_t)x * 1024) / len);
+    d->hour_dir[i].y = (int32_t)(((int64_t)y * 1024) / len);
   }
 }
 
