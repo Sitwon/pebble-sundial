@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import { strictEqual } from 'node:assert';
-import { parseCoord, parseLocation } from '../src/pkjs/settings.js';
+import { parseCoord, parseLocation, loadSettings, saveSettings } from '../src/pkjs/settings.js';
 
 // parseCoord tests
 test('parseCoord: normal latitudes', () => {
@@ -41,4 +41,21 @@ test('parseLocation: invalid lat returns null', () => {
 
 test('parseLocation: invalid lon returns null', () => {
   strictEqual(parseLocation('51.4779', '181'), null);
+});
+
+test('settings round-trip: GPS fix persisted as fallback', () => {
+  const backing = {};
+  globalThis.localStorage = {
+    getItem: (k) => (k in backing ? backing[k] : null),
+    setItem: (k, v) => { backing[k] = String(v); },
+  };
+  // what sendGps stores on a successful fix (clamped decimal degrees)
+  saveSettings({ useGps: true, lat: String(515000 / 10000), lon: String(-1000 / 10000) });
+  const s = loadSettings();
+  strictEqual(s.useGps, true);
+  strictEqual(s.lat, '51.5');
+  strictEqual(s.lon, '-0.1');
+  // the fallback parses back to the exact E4 that was sent
+  strictEqual(parseLocation(s.lat, s.lon).lat_e4, 515000);
+  strictEqual(parseLocation(s.lat, s.lon).lon_e4, -1000);
 });

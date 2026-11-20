@@ -43,6 +43,12 @@ function sendGps() {
     latE4 = Math.max(-900000, Math.min(900000, latE4));
     lonE4 = Math.max(-1800000, Math.min(1800000, lonE4));
     sendLocation(latE4, lonE4, 2);
+    /* persist the fix as the fallback for when GPS later fails */
+    settings.saveSettings({
+      useGps: true,
+      lat: String(latE4 / 10000),
+      lon: String(lonE4 / 10000)
+    });
   }, function () {
     sendManual();
   }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 });
