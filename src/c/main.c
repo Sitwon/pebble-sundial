@@ -40,14 +40,8 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
   Tuple *lat = dict_find(iter, MESSAGE_KEY_LAT_E4);
   Tuple *lon = dict_find(iter, MESSAGE_KEY_LON_E4);
   Tuple *src = dict_find(iter, MESSAGE_KEY_LOCATION_SOURCE);
-  if (!lat || !lon) { APP_LOG(APP_LOG_LEVEL_INFO, "inbox: no lat/lon"); return; }
-  if (!location_valid(lat->value->int32, lon->value->int32)) {
-    APP_LOG(APP_LOG_LEVEL_INFO, "inbox: invalid %d %d",
-            (int)lat->value->int32, (int)lon->value->int32);
-    return;
-  }
-  APP_LOG(APP_LOG_LEVEL_INFO, "inbox: lat %d lon %d",
-          (int)lat->value->int32, (int)lon->value->int32);
+  if (!lat || !lon) return;
+  if (!location_valid(lat->value->int32, lon->value->int32)) return;
 
   s_loc.lat_e4 = lat->value->int32;
   s_loc.lon_e4 = lon->value->int32;
@@ -74,6 +68,10 @@ static void window_unload(Window *window) {
   layer_destroy(s_layer);
 }
 
+static void bluetooth_handler(bool connected) {
+  if (connected) request_location();
+}
+
 static void init(void) {
   s_window = window_create();
   window_set_background_color(s_window, GColorBlack);
@@ -92,6 +90,9 @@ static void init(void) {
   }
 
   tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
+  connection_service_subscribe((ConnectionHandlers){
+    .pebble_app_connection_handler = bluetooth_handler,
+  });
 
   app_message_register_inbox_received(inbox_received);
   app_message_open(128, 128);
@@ -100,6 +101,7 @@ static void init(void) {
 
 static void deinit(void) {
   tick_timer_service_unsubscribe();
+  connection_service_unsubscribe();
   window_destroy(s_window);
 }
 

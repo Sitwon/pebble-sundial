@@ -1,4 +1,6 @@
+#include <pebble.h>
 #include "persist.h"
+#include <pebble.h>
 
 #define PERSIST_KEY_LAT    0x10
 #define PERSIST_KEY_LON    0x11
