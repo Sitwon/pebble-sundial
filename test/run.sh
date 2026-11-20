@@ -28,5 +28,6 @@ run_cc test_trig test/test_trig.c test/shim/trig_host.c
 run_cc test_solar test/test_solar.c src/c/solar.c src/c/fixmath.c test/shim/trig_host.c
 run_cc test_dial test/test_dial.c src/c/dial.c src/c/solar.c src/c/fixmath.c test/shim/trig_host.c
 run_cc test_theme test/test_theme.c src/c/theme.c
+run_cc test_location test/test_location.c src/c/location.c
 
 exit $fail
