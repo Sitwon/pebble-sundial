@@ -19,10 +19,11 @@ fail=0
 
 run_cc() { # run_cc <binary> <test.c> <src...>
   local bin="$1" testc="$2"; shift 2
-  cc $CFLAGS "$testc" "$@" -o "$OUT/$bin" || exit 1
+  cc $CFLAGS "$testc" "$@" -lm -o "$OUT/$bin" || exit 1
   "$OUT/$bin" || fail=1
 }
 
 run_cc test_fixmath test/test_fixmath.c src/c/fixmath.c
+run_cc test_trig test/test_trig.c test/shim/trig_host.c
 
 exit $fail
