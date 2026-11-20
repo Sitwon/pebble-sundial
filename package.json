@@ -1,0 +1,22 @@
+{
+  "name": "sundial",
+  "author": "Adam",
+  "version": "1.0.0",
+  "keywords": ["pebble-app"],
+  "private": true,
+  "dependencies": {},
+  "pebble": {
+    "displayName": "Sundial",
+    "uuid": "64126a7c-4d56-4b75-8b32-752449c96b17",
+    "sdkVersion": "3",
+    "enableMultiJS": true,
+    "targetPlatforms": ["emery", "gabbro"],
+    "watchapp": { "watchface": true },
+    "capabilities": ["location"],
+    "messageKeys": [
+      "REQUEST_LOCATION", "LAT_E4", "LON_E4",
+      "LOCATION_SOURCE", "LOCATION_VALID"
+    ],
+    "resources": { "media": [] }
+  }
+}
