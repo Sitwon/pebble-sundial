@@ -82,8 +82,8 @@ docs/shots/             committed screenshots
 These are within the spec's stated latitude; write them into `DECISIONS.md` in step 0.1.
 
 1. **Hour-ring test oracle is analytic, not a second ephemeris.** The Python table test checks day-level regression values; `test_solar.c` checks the four hand-verified cases in `SPEC.md` §7.1. This is enough to catch the realistic failure modes.
-2. **Numerals start with the system font**, as the spec's fallback. `FONT_KEY_GOTHIC_14` on emery, `FONT_KEY_GOTHIC_18` on gabbro. Vector glyphs are optional polish, not v1.
-3. **Theme thresholds:** day when `uz ≥ sin 6°`, golden when `0 ≤ uz < sin 6°`, night when `uz < 0`. Shadow bands: 3 at `uz ≥ sin 6°`, 2 at `≥ sin 4°`, 1 at `≥ sin 2°`, 0 below. This resolves the spec's −1° ambiguity in favour of "sun below the horizon = night".
+2. **Numerals are vector Roman glyphs** (I/V/X stroke construction), per the spec. `FONT_KEY_GOTHIC_14` on emery, `FONT_KEY_GOTHIC_18` on gabbro is the fallback, used only if the glyphs look crude in emulator testing.
+3. **Theme thresholds (per spec §3.5, unchanged):** day when `uz ≥ sin 6°`, golden when `0 ≤ uz < sin 6°` (shadow fades out below `sin 2°`), night when `uz ≤ −1°`. Shadow bands: 3 at `uz ≥ sin 6°`, 2 at `≥ sin 4°`, 1 at `≥ sin 2°`, 0 below. There is no band between `−1°` and `0`; night starts exactly at `uz ≤ sin(−1°) = −1144`.
 4. **Shadow filling** is a scanline fill clipped row-by-row to the dial circle. No polygon/circle clipping code.
 5. **No pixel-perfect golden images.** Screenshots are checked with luminance probes (`check_shot.py`) plus review by the agent.
 6. **Clay** uses `@rebble/clay` 1.1.0.
@@ -128,7 +128,7 @@ These are within the spec's stated latitude; write them into `DECISIONS.md` in s
 - `.gitignore`: `build/`, `node_modules/`, `*.pyc`, `__pycache__/`.
 - `DECISIONS.md`: paste §2 above.
 - `README.md`: build/test/emulator commands (can be filled in as the plan proceeds).
-- `src/c/main.c`: window + one `CanvasLayer` that fills the screen black and draws a hard-coded brass circle at `(100,114)` radius `94` (use `DIAL_*` values from the layout table, but hard-code for now).
+- `src/c/main.c`: window + one `CanvasLayer` that fills the screen black and draws a hard-coded brass circle centred on the layer bounds (platform-agnostic: centre = bounds mid, radius = `min(w,h)/2 − 6`, so both emery and gabbro render correctly).
 - `src/pkjs/index.js`: empty file (Pebble needs it when `enableMultiJS` is true).
 
 **Verify**
@@ -466,7 +466,8 @@ int32_t band_scale_q16(int32_t max_dist_q10, int32_t offset_px_q10);
 | 2287 | GOLDEN | 1 |
 | 2286 | GOLDEN | 0 |
 | 0 | GOLDEN | 0 |
-| −1 | NIGHT | 0 |
+| −1144 | GOLDEN | 0 |
+| −1145 | NIGHT | 0 |
 | −65535 | NIGHT | 0 |
 
 **Implement** `src/c/theme.h/.c`:
@@ -477,7 +478,7 @@ typedef struct { Theme theme; uint8_t shadow; } Scene;
 Scene scene_for_sun(int32_t uz_q16);
 ```
 
-Constants: `SIN6_Q16 = 6850`, `SIN4_Q16 = 4572`, `SIN2_Q16 = 2287`.
+Constants: `SIN6_Q16 = 6850`, `SIN4_Q16 = 4572`, `SIN2_Q16 = 2287`, `SIN_M1_Q16 = −1144` (night starts at −1°, per spec §3.5).
 
 **Commit:** `step 4.1: day/golden/night scene selection`
 
@@ -558,7 +559,7 @@ Test it against the step 0.1 screenshot: centre pixel is brass-ish, corner (2,2)
 
 - 13 hour lines from `0.14R` to `0.70R`, using `hour_dir` + `dial_to_screen`, 1 px (2 px on gabbro). VI at both sides, XII at top.
 - Draw a dark line then a 1 px light line offset `(+1,+1)` to fake engraving.
-- Numerals: labels `VI, VII, VIII, IX, X, XI, XII, I, II, III, IV, V, VI` at `0.82R`, using `FONT_KEY_GOTHIC_14` (emery) / `FONT_KEY_GOTHIC_18` (gabbro), centered. Place VI twice (6am and 6pm).
+- Numerals: vector Roman glyphs (I/V/X strokes) drawn with 1 px strokes (2 px on gabbro), engraved two-tone, upright, labels `VI, VII, VIII, IX, X, XI, XII, I, II, III, IV, V, VI` at `0.82R`, centred. Place VI twice (6am and 6pm). Each glyph is a small array of line segments; draw dark core, then 1 px light offset `(+1,+1)`. If the glyphs look crude in the emulator, fall back to `FONT_KEY_GOTHIC_14` (emery) / `FONT_KEY_GOTHIC_18` (gabbro) and record it in `DECISIONS.md`.
 - Motto at `(cx, cy + 0.63R)`: `HORAS NON NUMERO NISI SERENAS` in `FONT_KEY_GOTHIC_09` (emery) / `FONT_KEY_GOTHIC_14` (gabbro). Measure with `graphics_text_layout_get_content_size`; if wider than the dial chord at that y, use `TEMPUS FUGIT`.
 - Hub circle at centre, `0.12R`.
 - Pole index dot at `0.97R` above centre, filled.
@@ -744,6 +745,8 @@ Run and save every shot under `docs/shots/`:
 | gabbro summer noon | 1782043200 | London | as above |
 | gabbro night | 1782082800 | London | as above |
 
+Repeat the emery summer-noon and night shots with `--no-correction` and run the same probes; contrast must hold in both modes.
+
 Also:
 
 - Set two different emulator time zones (e.g. `TZ=UTC` vs `TZ=Asia/Tokyo` in the shell that launches the emulator) and confirm the shadow is identical.
@@ -827,7 +830,7 @@ void render_draw(GContext *ctx, GRect bounds, const Dial *dial,
 
 **Trig:** `TRIG_MAX_ANGLE = 65536`, `TRIG_MAX_RATIO = 65535`. All Q16.0.
 
-**Scene:** `SIN2 = 2287`, `SIN4 = 4572`, `SIN6 = 6850`.
+**Scene:** `SIN2 = 2287`, `SIN4 = 4572`, `SIN6 = 6850`, `SIN(−1°) = −1144`.
 
 **Hour ring at 51.4779°N, clockwise from up:**
 
