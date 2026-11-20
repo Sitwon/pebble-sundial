@@ -135,3 +135,11 @@ int convex_hull(PointQ10 in[6], PointQ10 out[6]) {
   for (int i = 0; i < k; i++) out[i] = h[i];
   return k;
 }
+
+/* penumbra bands widen with shadow length: 65536 == no widening */
+int32_t band_scale_q16(int32_t max_dist_q10, int32_t offset_px_q10) {
+  if (offset_px_q10 <= 0 || max_dist_q10 <= 0) return 65536;
+  int32_t s = 65536 + (int32_t)(((int64_t)offset_px_q10 * 65536) / max_dist_q10);
+  if (s > 131072) s = 131072;
+  return s;
+}

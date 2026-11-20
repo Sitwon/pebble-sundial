@@ -217,5 +217,20 @@ int main(void) {
   tip = dial_style_tip(&d, uam);
   CHECK_NEAR(screen_angle_of(dial_to_screen(&d, tip)), 322.0, 0.5);
 
+  /* --- step 3.4: penumbra band scale (all args Q10; 1024 == R == 94 px) --- */
+  CHECK(band_scale_q16(600, 0) == 65536);
+  CHECK(band_scale_q16(0, 0) == 65536);
+  int32_t prev = -1;
+  for (int32_t px = 0; px <= 6; px++) {
+    int32_t s = band_scale_q16(654, px * 11);   /* 60 px reach, 0..6 px offset */
+    CHECK(s >= prev);
+    CHECK(s >= 65536 && s <= 131072);
+    prev = s;
+  }
+  /* 0..6 px over a 60 px reach spans ~1.0..~1.1 */
+  CHECK_NEAR(band_scale_q16(654, 66), 72144, 60);
+  /* extreme offset stays capped */
+  CHECK(band_scale_q16(1, 100000) <= 131072);
+
   return test_summary("test_dial");
 }

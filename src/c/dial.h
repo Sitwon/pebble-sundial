@@ -22,5 +22,6 @@ bool dial_shadow_visible(Vec3q16 sun);
 void dial_shadow_points(const Dial *d, Vec3q16 sun, PointQ10 out[6]);
 PointQ10 dial_style_tip(const Dial *d, Vec3q16 sun);
 int convex_hull(PointQ10 in[6], PointQ10 out[6]);
+int32_t band_scale_q16(int32_t max_dist_q10, int32_t offset_px_q10);
 
 #endif
