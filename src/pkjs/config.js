@@ -4,7 +4,7 @@ module.exports = [
     'type': 'toggle',
     'label': 'Use phone GPS for location',
     'messageKey': 'useGps',
-    'defaultValue': false
+    'defaultValue': true
   },
   {
     'type': 'input',

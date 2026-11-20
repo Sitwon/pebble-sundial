@@ -59,3 +59,15 @@ test('settings round-trip: GPS fix persisted as fallback', () => {
   strictEqual(parseLocation(s.lat, s.lon).lat_e4, 515000);
   strictEqual(parseLocation(s.lat, s.lon).lon_e4, -1000);
 });
+
+test('settings: GPS defaults to on when nothing is stored', () => {
+  const backing = {};
+  globalThis.localStorage = {
+    getItem: (k) => (k in backing ? backing[k] : null),
+    setItem: (k, v) => { backing[k] = String(v); },
+  };
+  strictEqual(loadSettings().useGps, true);
+  // an explicit off persists as 'false' and must stay off
+  saveSettings({ useGps: false, lat: '51.4779', lon: '-0.0015' });
+  strictEqual(loadSettings().useGps, false);
+});

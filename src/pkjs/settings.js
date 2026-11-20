@@ -22,13 +22,13 @@ function parseLocation(latStr, lonStr) {
 var DEFAULT_LAT = 51.4779;
 var DEFAULT_LON = -0.0015;
 
-/* Load stored settings from localStorage; fall back to defaults. */
+/* Load stored settings from localStorage; fall back to defaults (GPS on). */
 function loadSettings() {
   var useGps = localStorage.getItem('useGps');
   var lat = localStorage.getItem('lat');
   var lon = localStorage.getItem('lon');
   return {
-    useGps: useGps === 'true',
+    useGps: useGps !== 'false',   /* unset defaults to GPS on; explicit off persists 'false' */
     lat: lat || DEFAULT_LAT,
     lon: lon || DEFAULT_LON,
   };
