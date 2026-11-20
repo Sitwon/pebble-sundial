@@ -61,6 +61,8 @@ position. Apparent (sundial) time differs from clock time by up to ±16 minutes
 latitudes 15° and 75°; outside that band the dial switches to a provisional
 look. Set your location in the settings page, or let the watch use phone GPS.
 
+Source code: https://github.com/Sitwon/pebble-sundial
+
 ## Release
 
 Icons: `icon_80x80.png` / `icon_144x144.png` (from the dial screenshot).
