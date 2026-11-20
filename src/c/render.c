@@ -13,7 +13,7 @@ static void draw_stipple_run(GContext *ctx, int32_t y, int32_t x, int32_t n,
     bool on = i < n && stipple_on(x + i, y, density);
     if (on && run_start < 0) run_start = i;
     if (!on && run_start >= 0) {
-      graphics_fill_rect(ctx, GRect(x + run_start, y, i - run_start, 1), 0,
+      graphics_fill_rect(ctx, ((GRect){{x + run_start, y}, {i - run_start, 1}}), 0,
                          GCornerNone);
       run_start = -1;
     }
@@ -174,7 +174,7 @@ static void draw_motto(GContext *ctx, int32_t cx, int32_t cy, int32_t R,
       0, fonts_get_system_font(FONT_KEY_GOTHIC_14));
 
   GSize size = graphics_text_layout_get_content_size(
-      motto, font, GRect(0, 0, 2 * R, 2 * R), GTextOverflowModeWordWrap,
+      motto, font, ((GRect){{0, 0}, {2 * R, 2 * R}}), GTextOverflowModeWordWrap,
       GTextAlignmentCenter);
   /* chord width at the motto's y (0.63R below centre) */
   int32_t my = cy + (int32_t)R * MOTTO_R_Q10 / 1024;
@@ -184,7 +184,7 @@ static void draw_motto(GContext *ctx, int32_t cx, int32_t cy, int32_t R,
   graphics_context_set_text_color(
       ctx, calibrated ? GColorArmyGreen : GColorDarkGray);
   graphics_draw_text(ctx, motto, font,
-                     GRect(cx - R, my - size.h / 2, 2 * R, size.h + 2),
+                     ((GRect){{cx - R, my - size.h / 2}, {2 * R, size.h + 2}}),
                      GTextOverflowModeWordWrap, GTextAlignmentCenter, NULL);}
 
 static void draw_case(GContext *ctx, GRect bounds) {
@@ -229,7 +229,120 @@ static void draw_dial(GContext *ctx, int32_t cx, int32_t cy, int32_t R,
   }
 }
 
-/* ---- gnomon blade (step 5.3) ---- */
+/* ---- cast shadow (step 5.4) ---- */
+
+/* stipple-filled scanline polygon, rows clipped to the dial circle */
+static void poly_fill(GContext *ctx, GPoint *pts, int n, int32_t cx,
+                      int32_t cy, int32_t R, uint8_t density, bool core) {
+  int32_t ymin = pts[0].y, ymax = pts[0].y;
+  for (int i = 1; i < n; i++) {
+    if (pts[i].y < ymin) ymin = pts[i].y;
+    if (pts[i].y > ymax) ymax = pts[i].y;
+  }
+  if (ymin < cy - R + 1) ymin = cy - R + 1;
+  if (ymax > cy + R - 1) ymax = cy + R - 1;
+
+  for (int32_t y = ymin; y <= ymax; y++) {
+    int32_t xs[8];
+    int nx = 0;
+    for (int i = 0; i < n; i++) {
+      GPoint a = pts[i], b = pts[(i + 1) % n];
+      if (a.y == b.y) continue;
+      if ((y >= a.y && y < b.y) || (y >= b.y && y < a.y))
+        xs[nx++] = a.x + (int32_t)(((int64_t)(y - a.y) * (b.x - a.x)) / (b.y - a.y));
+    }
+    for (int i = 1; i < nx; i++) {         /* sort crossings */
+      int32_t v = xs[i];
+      int j = i - 1;
+      while (j >= 0 && xs[j] > v) { xs[j + 1] = xs[j]; j--; }
+      xs[j + 1] = v;
+    }
+    /* clip the row to the dial circle */
+    int64_t v = (int64_t)R * R - (int64_t)(y - cy) * (y - cy);
+    if (v <= 0) continue;
+    int32_t dx = isqrt_u64((uint64_t)v);
+    for (int e = 0; e + 1 < nx; e += 2) {
+      int32_t lo = xs[e] < cx - dx ? cx - dx : xs[e];
+      int32_t hi = xs[e + 1] > cx + dx ? cx + dx : xs[e + 1];
+      int32_t run_start = -1;
+      GColor run_col = GColorBlack;
+      for (int32_t x = lo; x <= hi + 1; x++) {
+        bool on = x <= hi && stipple_on(x, y, density);
+        GColor col = GColorArmyGreen;
+        if (core && on && !((x & 1) || (y & 1))) col = GColorBlack;
+        if (on && run_start < 0) {
+          run_start = x;
+          run_col = col;
+        } else if (run_start >= 0 && (!on || col != run_col)) {
+          graphics_context_set_fill_color(ctx, run_col);
+          graphics_fill_rect(ctx, GRect(run_start, y, x - run_start, 1), 0,
+                             GCornerNone);
+          run_start = on ? x : -1;
+          run_col = col;
+        }
+      }
+    }
+  }
+}
+
+static void draw_shadow(GContext *ctx, const Dial *d, int32_t cx, int32_t cy,
+                        int32_t R, Vec3q16 sun) {
+  Scene sc = scene_for_sun(sun.z);
+  if (sc.shadow == 0) return;
+
+  PointQ10 local[6], hull[6];
+  dial_shadow_points(d, sun, local);
+  int n = convex_hull(local, hull);
+  if (n < 3) return;
+
+  /* hull in screen px, plus its reach for the band width */
+  GPoint base[6];
+  int32_t max_q10 = 0;
+  for (int i = 0; i < n; i++) {
+    PointQ10 s = dial_to_screen(d, hull[i]);
+    base[i].x = (int16_t)(cx + (int32_t)s.x * R / 1024);
+    base[i].y = (int16_t)(cy + (int32_t)s.y * R / 1024);
+    int32_t len2 = s.x * s.x + s.y * s.y;
+    if (len2 > max_q10) max_q10 = len2;
+  }
+  max_q10 = isqrt_u64((uint32_t)max_q10);
+  int32_t max_px = (int32_t)((int64_t)max_q10 * R / 1024);
+
+  int32_t band_px = 2 + max_px / 50;
+  int32_t cap = PBL_PLATFORM_SWITCH(PBL_PLATFORM_TYPE_CURRENT, 0, 0, 0, 0, 6, 0, 8);
+  if (band_px > cap) band_px = cap;
+
+  /* three nested fills scaled about the style foot, outside in */
+  int32_t scales[3] = {65536,
+                       band_scale_q16(max_q10, band_px / 2),
+                       band_scale_q16(max_q10, band_px)};
+  uint8_t dens[3] = {12, 8, 4};
+  for (int b = 2; b >= 0; b--) {
+    GPoint poly[6];
+    for (int i = 0; i < n; i++) {
+      poly[i].x = (int16_t)(cx + ((int32_t)(base[i].x - cx) * scales[b]) / 65536);
+      poly[i].y = (int16_t)(cy + ((int32_t)(base[i].y - cy) * scales[b]) / 65536);
+    }
+    poly_fill(ctx, poly, n, cx, cy, R, dens[b], b == 0);
+  }
+
+  /* crisp reading edge from centre to the style tip, clamped inside 0.97R */
+  PointQ10 tip = dial_style_tip(d, sun);
+  int64_t tpx = (int64_t)tip.x * R / 1024;
+  int64_t tpy = (int64_t)tip.y * R / 1024;
+  int64_t tlen2 = tpx * tpx + tpy * tpy;
+  int64_t lim = (int64_t)R * 997 / 1024;
+  if (tlen2 > lim * lim) {
+    int64_t f = (int64_t)lim * 65536 / isqrt_u64((uint64_t)tlen2);
+    tpx = tpx * f / 65536;
+    tpy = tpy * f / 65536;
+  }
+  graphics_context_set_antialiased(ctx, false);
+  stroke_line(ctx, GPoint(cx, cy), GPoint(cx + tpx, cy + tpy), GColorBlack, 1);
+  graphics_context_set_antialiased(ctx, true);
+}
+
+
 
 static void draw_blade(GContext *ctx, const Dial *d, int32_t cx, int32_t cy,
                        int32_t R, Vec3q16 sun) {
@@ -240,12 +353,12 @@ static void draw_blade(GContext *ctx, const Dial *d, int32_t cx, int32_t cy,
 
   /* blade always points up toward the visible pole */
   graphics_context_set_fill_color(ctx, GColorWindsorTan);
-  graphics_fill_rect(ctx, GRect(cx - half, cy - Lpx, wpx, Lpx), 0,
+  graphics_fill_rect(ctx, ((GRect){{cx - half, cy - Lpx}, {wpx, Lpx}}), 0,
                      GCornerNone);
   int32_t sunx = sun.x * d->pole;   /* sun's screen-x sign */
   graphics_context_set_fill_color(ctx, GColorRajah);   /* sunward half lit */
   graphics_fill_rect(ctx,
-      GRect(sunx > 0 ? cx : cx - half, cy - Lpx, half, Lpx), 0, GCornerNone);
+      ((GRect){{sunx > 0 ? cx : cx - half, cy - Lpx}, {half, Lpx}}), 0, GCornerNone);
 
   /* ridge line, sunward bevel, far-edge rim light */
   graphics_context_set_stroke_color(ctx, GColorChromeYellow);
@@ -258,7 +371,7 @@ static void draw_blade(GContext *ctx, const Dial *d, int32_t cx, int32_t cy,
 
   /* 2 px contact shadow across the base */
   graphics_context_set_fill_color(ctx, GColorBlack);
-  graphics_fill_rect(ctx, GRect(cx - half - 1, cy, wpx + 2, 2), 0, GCornerNone);
+  graphics_fill_rect(ctx, ((GRect){{cx - half - 1, cy}, {wpx + 2, 2}}), 0, GCornerNone);
 }
 
 void render_draw(GContext *ctx, GRect bounds, const Dial *dial,
@@ -270,5 +383,6 @@ void render_draw(GContext *ctx, GRect bounds, const Dial *dial,
   draw_dial(ctx, cx, cy, R, calibrated);
   draw_engraving(ctx, dial, cx, cy, R, calibrated);
   draw_motto(ctx, cx, cy, R, calibrated);
+  draw_shadow(ctx, dial, cx, cy, R, sun);
   draw_blade(ctx, dial, cx, cy, R, sun);
 }
