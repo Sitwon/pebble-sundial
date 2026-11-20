@@ -29,7 +29,7 @@ pebble screenshot --no-open --emulator emery docs/shots/shot.png
 ```sh
 ./test/run.sh          # C math modules
 python3 test/test_solar_table.py   # solar table generator
-node --test test/             # phone-side settings parsing
+node --test "test/**/*.mjs"    # phone-side settings parsing
 python3 tools/gen_solar_table.py --check   # table freshness
 ```
 
@@ -51,6 +51,20 @@ pebble package install @rebble/clay
 ```
 
 Open settings from the watchface: `pebble emu-app-config --emulator emery`.
+
+## App store description
+
+Sundial shows apparent solar time on a simulated horizontal brass dial: the shadow
+of the gnomon falls on the correct hour line for your location and the real solar
+position. Apparent (sundial) time differs from clock time by up to ±16 minutes
+(the equation of time); no digital time is shown, by design. Accurate between
+latitudes 15° and 75°; outside that band the dial switches to a provisional
+look. Set your location in the settings page, or let the watch use phone GPS.
+
+## Release
+
+Icons: `icon_80x80.png` / `icon_144x144.png` (from the dial screenshot).
+Publish with `pebble publish`.
 
 ## Stale emulator
 
