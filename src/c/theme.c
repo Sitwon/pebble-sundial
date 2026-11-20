@@ -18,3 +18,20 @@ Scene scene_for_sun(int32_t uz_q16) {
   else s.shadow = 0;
   return s;
 }
+
+static const uint8_t k_bayer[16] = {
+   0,  8,  2, 10,
+  12,  4, 14,  6,
+   3, 11,  1,  9,
+  15,  7, 13,  5
+};
+
+uint8_t bayer4(int32_t x, int32_t y) {
+  return k_bayer[(y & 3) * 4 + (x & 3)];
+}
+
+bool stipple_on(int32_t x, int32_t y, uint8_t density) {
+  if (density == 0) return false;
+  if (density >= 16) return true;
+  return bayer4(x, y) < density;
+}
