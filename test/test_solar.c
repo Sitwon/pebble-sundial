@@ -1,8 +1,13 @@
 #include "test.h"
 #include <stdlib.h>
 #include <time.h>
+#include <math.h>
 #include "solar.h"
 #include "solar_table.h"
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
 
 /* unix timestamps, all UTC */
 #define T2026_SUMMER_NOON 1782043200   /* 2026-06-21 12:00 */
@@ -88,6 +93,53 @@ int main(void) {
     solar_state(utc, lon, &s1);
     CHECK_NEAR(s1.hour_angle, hours[i].want, 2);
   }
+
+  /* --- sun vector (step 2.3) --- */
+  static const struct {
+    time_t utc; int32_t lat_e4, lon_e4; double alt_deg; int want_ysign;
+  } cases[] = {
+    {T2026_SUMMER_NOON, 514779, -15, 61.95, 1},
+    {T2026_WINTER_NOON, 514779, -15, 15.09, 1},
+    {T2026_EQUINOX_9AM, 514779, -15, 25.12, 0},
+    {T2026_SUMMER_NOON - 10 * 3600, -338688, 1512093, 32.69, -1},
+  };
+  for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+    SolarState s;
+    solar_state(cases[i].utc, cases[i].lon_e4, &s);
+    Vec3q16 u = sun_vector(&s, cases[i].lat_e4);
+
+    /* analytic oracle from the C decl/hour angle (SPEC 3.2) */
+    double d = s.decl_cdeg / 100.0 * M_PI / 180.0;
+    double H = s.hour_angle * 360.0 / 65536.0 * M_PI / 180.0;
+    double phi = cases[i].lat_e4 / 10000.0 * M_PI / 180.0;
+    double ex = -cos(d) * sin(H) * 65535.0;
+    double ey = (sin(d) * cos(phi) - cos(d) * sin(phi) * cos(H)) * 65535.0;
+    double ez = (sin(d) * sin(phi) + cos(d) * cos(phi) * cos(H)) * 65535.0;
+    CHECK_NEAR(u.x, ex, 8);
+    CHECK_NEAR(u.y, ey, 8);
+    CHECK_NEAR(u.z, ez, 8);
+
+    /* unit length */
+    int64_t len2 = (int64_t)u.x * u.x + (int64_t)u.y * u.y + (int64_t)u.z * u.z;
+    CHECK_NEAR(len2, 65535ll * 65535, 12ll * 65535);
+
+    /* altitude matches the spec */
+    double alt = asin(u.z / 65535.0) * 180.0 / M_PI;
+    CHECK_NEAR(alt, cases[i].alt_deg, 0.3);
+
+    /* near solar noon: x small (|H| <= 0.75 deg -> |x| <= ~800) and the sun
+     * sits on the equator side of the zenith */
+    if (cases[i].want_ysign != 0) {
+      CHECK(u.x < 1000 && u.x > -1000);
+      CHECK(u.y * cases[i].want_ysign < 0);
+    }
+  }
+
+  /* night: London 2026-06-21 23:00, sun below horizon */
+  SolarState s;
+  solar_state(1782082800, -15, &s);
+  Vec3q16 u = sun_vector(&s, 514779);
+  CHECK(u.z < 0);
 
   return test_summary("test_solar");
 }
