@@ -1,5 +1,7 @@
 #include <pebble.h>
 #include "dial.h"
+#include "location.h"
+#include "persist.h"
 #include "render.h"
 #include "solar.h"
 #include "sundial.h"
@@ -10,7 +12,7 @@ static Layer *s_layer;
 static Dial s_dial;
 static SolarState s_solar;
 static Vec3q16 s_sun;
-static Location s_loc = {514779, -15, 0, false};  /* Greenwich until phase 6 */
+static Location s_loc = {514779, -15, 0, false};  /* default Greenwich */
 
 static void redraw(void) {
   solar_state(time(NULL), s_loc.lon_e4, &s_solar);
@@ -22,6 +24,36 @@ static void redraw(void) {
 static void tick_handler(struct tm *tick_time, TimeUnits units) {
   (void)tick_time;
   (void)units;
+  redraw();
+}
+
+static void request_location(void) {
+  DictionaryIterator *iter;
+  if (app_message_outbox_begin(&iter) == APP_MSG_OK) {
+    dict_write_uint8(iter, MESSAGE_KEY_REQUEST_LOCATION, 1);
+    app_message_outbox_send();
+  }
+}
+
+static void inbox_received(DictionaryIterator *iter, void *context) {
+  (void)context;
+  Tuple *lat = dict_find(iter, MESSAGE_KEY_LAT_E4);
+  Tuple *lon = dict_find(iter, MESSAGE_KEY_LON_E4);
+  Tuple *src = dict_find(iter, MESSAGE_KEY_LOCATION_SOURCE);
+  if (!lat || !lon) { APP_LOG(APP_LOG_LEVEL_INFO, "inbox: no lat/lon"); return; }
+  if (!location_valid(lat->value->int32, lon->value->int32)) {
+    APP_LOG(APP_LOG_LEVEL_INFO, "inbox: invalid %d %d",
+            (int)lat->value->int32, (int)lon->value->int32);
+    return;
+  }
+  APP_LOG(APP_LOG_LEVEL_INFO, "inbox: lat %d lon %d",
+          (int)lat->value->int32, (int)lon->value->int32);
+
+  s_loc.lat_e4 = lat->value->int32;
+  s_loc.lon_e4 = lon->value->int32;
+  s_loc.source = src ? src->value->uint8 : 0;
+  s_loc.valid = true;
+  persist_location_save(&s_loc);
   redraw();
 }
 
@@ -50,7 +82,20 @@ static void init(void) {
     .unload = window_unload,
   });
   window_stack_push(s_window, true);
+
+  /* Load persisted location; fall back to Greenwich default. */
+  if (!persist_location_load(&s_loc)) {
+    s_loc.lat_e4 = 514779;
+    s_loc.lon_e4 = -15;
+    s_loc.source = 0;
+    s_loc.valid = false;
+  }
+
   tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
+
+  app_message_register_inbox_received(inbox_received);
+  app_message_open(128, 128);
+  request_location();
 }
 
 static void deinit(void) {
